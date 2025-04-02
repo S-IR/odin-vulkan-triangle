@@ -102,7 +102,7 @@ main :: proc() {
 
 
 	vk_init()
-	// vk_triangle()
+	vk_triangle()
 	free_all(context.temp_allocator)
 
 	e: sdl.Event
@@ -180,6 +180,7 @@ vk_init :: proc() {
 				pApplicationName = APP_NAME,
 				pEngineName = "Ponginne",
 				sType = .APPLICATION_INFO,
+				apiVersion = vk.MAKE_VERSION(1, 3, 2),
 			},
 		},
 		nil,
@@ -487,11 +488,110 @@ vk_init :: proc() {
 	}
 	free_all(context.temp_allocator)
 }
-// Triangle_r: struct {} = {}
-// vk_triangle :: proc() {
+Triangle_r: struct {
+	pipeline:       vk.Pipeline,
+	pipelineLayout: vk.PipelineLayout,
+} = {}
+
+vk_triangle :: proc() {
+	vRes: vk.Result
+
+	{
+		vRes = vk.CreatePipelineLayout(
+			vkDevice,
+			&vk.PipelineLayoutCreateInfo{sType = .PIPELINE_LAYOUT_CREATE_INFO},
+			nil,
+			&Triangle_r.pipelineLayout,
+		)
+		vk_ensure(vRes)
+	}
+
+	ensure(Triangle_r.pipelineLayout != {})
+	{
+
+		vertexShader, fragmentShader: vk.ShaderModule
+		shaderModuleInfo := vk.ShaderModuleCreateInfo {
+			sType = .SHADER_MODULE_CREATE_INFO,
+		}
+
+		shaderModuleInfo.pCode = auto_cast raw_data(Available_Shader_Binaries[.TriangleVert])
+		shaderModuleInfo.codeSize = len(Available_Shader_Binaries[.TriangleVert])
+		ensure(shaderModuleInfo.pCode != nil)
+		ensure(shaderModuleInfo.codeSize > 0)
+		vk_ensure(vk.CreateShaderModule(vkDevice, &shaderModuleInfo, nil, &vertexShader))
 
 
-// }
+		shaderModuleInfo.pCode = auto_cast raw_data(Available_Shader_Binaries[.TriangleFrag])
+		shaderModuleInfo.codeSize = len(Available_Shader_Binaries[.TriangleFrag])
+		ensure(shaderModuleInfo.pCode != nil)
+		ensure(shaderModuleInfo.codeSize > 0)
+		vk_ensure(vk.CreateShaderModule(vkDevice, &shaderModuleInfo, nil, &fragmentShader))
+
+		shaderStages := [?]vk.PipelineShaderStageCreateInfo {
+			{
+				sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+				pName = "main",
+				stage = {.VERTEX},
+				module = vertexShader,
+			},
+			{
+				sType = .PIPELINE_SHADER_STAGE_CREATE_INFO,
+				pName = "main",
+				stage = {.FRAGMENT},
+				module = fragmentShader,
+			},
+		}
+		dynamicStates := [?]vk.DynamicState{.VIEWPORT, .SCISSOR}
+
+		pipeInfo := vk.GraphicsPipelineCreateInfo {
+			sType               = .GRAPHICS_PIPELINE_CREATE_INFO,
+			pColorBlendState    = &vk.PipelineColorBlendStateCreateInfo {
+				sType = .PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+				pAttachments = &vk.PipelineColorBlendAttachmentState {
+					blendEnable = false,
+					colorWriteMask = {.R, .G, .B, .A},
+				},
+				attachmentCount = 1,
+			},
+			pVertexInputState   = &vk.PipelineVertexInputStateCreateInfo {
+				sType = .PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+			},
+			pStages             = raw_data(shaderStages[:]),
+			stageCount          = len(shaderStages),
+			pRasterizationState = &vk.PipelineRasterizationStateCreateInfo {
+				sType = .PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+				frontFace = .CLOCKWISE,
+				cullMode = {.BACK},
+				polygonMode = .FILL,
+				lineWidth = 1.0,
+			},
+			layout              = Triangle_r.pipelineLayout,
+			renderPass          = vkRenderPass,
+			pViewportState      = &vk.PipelineViewportStateCreateInfo {
+				sType = .PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+				scissorCount = 1,
+				viewportCount = 1,
+				pScissors = &vk.Rect2D{},
+				pViewports = &vk.Viewport{},
+			},
+			pDynamicState       = &vk.PipelineDynamicStateCreateInfo {
+				pDynamicStates = raw_data(dynamicStates[:]),
+				dynamicStateCount = len(dynamicStates),
+				sType = .PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+			},
+			pMultisampleState   = &vk.PipelineMultisampleStateCreateInfo {
+				sType = .PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+				rasterizationSamples = {._1},
+			},
+			pInputAssemblyState = &vk.PipelineInputAssemblyStateCreateInfo {
+				sType = .PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+				topology = .TRIANGLE_LIST,
+			},
+		}
+		vk.CreateGraphicsPipelines(vkDevice, 0, 1, &pipeInfo, nil, &Triangle_r.pipeline)
+	}
+	ensure(&Triangle_r.pipeline != {})
+}
 vk_render :: proc() {
 	vRes: vk.Result
 	vkImgIdx: u32 = max(u32)
@@ -524,7 +624,7 @@ vk_render :: proc() {
 	vk_ensure(vRes)
 
 	clearColor := vk.ClearValue {
-		color = {float32 = {1, 1, 0, 1}},
+		color = {float32 = {.2, .4, .6, 1}},
 	}
 
 	vk.CmdBeginRenderPass(
@@ -543,6 +643,16 @@ vk_render :: proc() {
 		.INLINE,
 	)
 	{
+		vk.CmdSetScissor(cmd, 0, 1, &vk.Rect2D{extent = {u32(screenWidth), u32(screenHeight)}})
+		vk.CmdSetViewport(
+			cmd,
+			0,
+			1,
+			&vk.Viewport{maxDepth = 1.0, width = f32(screenWidth), height = f32(screenHeight)},
+		)
+		assert(Triangle_r.pipeline != {})
+		vk.CmdBindPipeline(cmd, .GRAPHICS, Triangle_r.pipeline)
+		vk.CmdDraw(cmd, 3, 1, 0, 0)
 		// // First barrier: transition from UNDEFINED to TRANSFER_DST_OPTIMAL.
 		// barrier1 := vk.ImageMemoryBarrier {
 		// 	sType = .IMAGE_MEMORY_BARRIER,
