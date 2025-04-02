@@ -1,0 +1,7 @@
+*.exe
+*.pdb
+*.rdi
+*.dll
+shared/vma/build/
+build/
+
