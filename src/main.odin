@@ -1,6 +1,6 @@
 package main
 
-import vma "../shared/vma"
+// import vma "../shared/vma"
 import "base:runtime"
 import "core:fmt"
 import "core:math/rand"
@@ -103,7 +103,11 @@ main :: proc() {
 
 	vk_init()
 	defer vk_destroy()
-	vk_triangle()
+
+	vk_triangle_init()
+	defer vk_triangle_destroy()
+
+
 	free_all(context.temp_allocator)
 
 	e: sdl.Event
@@ -294,22 +298,22 @@ vk_init :: proc() {
 
 	ensure(vkQueue != {})
 	ensure(vkDevice != {})
-	{
-		vkVmaProcs = vma.create_vulkan_functions()
-		vRes = vma.create_allocator(
-			vma.Allocator_Create_Info {
-				flags = {.Buffer_Device_Address},
-				instance = vkInstance,
-				vulkan_api_version = vk.MAKE_VERSION(1, 3, 2),
-				physical_device = vkGpu,
-				device = vkDevice,
-				vulkan_functions = &vkVmaProcs,
-			},
-			&vkAppAlocator,
-		)
-		vk_ensure(vRes)
-	}
-	ensure(vkAppAlocator != {})
+	// {
+	// 	vkVmaProcs = vma.create_vulkan_functions()
+	// 	vRes = vma.create_allocator(
+	// 		vma.Allocator_Create_Info {
+	// 			flags = {.Buffer_Device_Address},
+	// 			instance = vkInstance,
+	// 			vulkan_api_version = vk.MAKE_VERSION(1, 3, 2),
+	// 			physical_device = vkGpu,
+	// 			device = vkDevice,
+	// 			vulkan_functions = &vkVmaProcs,
+	// 		},
+	// 		&vkAppAlocator,
+	// 	)
+	// 	vk_ensure(vRes)
+	// }
+	// ensure(vkAppAlocator != {})
 
 	{
 		MAX_SURFACE_CAPS :: 64
@@ -517,7 +521,7 @@ vk_destroy :: proc() {
 	}
 	vk.DestroySwapchainKHR(vkDevice, vkSwapchain, nil)
 	vk.DestroyRenderPass(vkDevice, vkRenderPass, nil)
-	vma.destroy_allocator(vkAppAlocator)
+	// vma.destroy_allocator(vkAppAlocator)
 	vk.DestroyCommandPool(vkDevice, vkCommandPool, nil)
 	vk.DestroySurfaceKHR(vkInstance, vkSurface, nil)
 	vk.DestroyDevice(vkDevice, nil)
@@ -532,7 +536,7 @@ Triangle_r: struct {
 	pipelineLayout: vk.PipelineLayout,
 } = {}
 
-vk_triangle :: proc() {
+vk_triangle_init :: proc() {
 	vRes: vk.Result
 
 	{
@@ -558,13 +562,14 @@ vk_triangle :: proc() {
 		ensure(shaderModuleInfo.pCode != nil)
 		ensure(shaderModuleInfo.codeSize > 0)
 		vk_ensure(vk.CreateShaderModule(vkDevice, &shaderModuleInfo, nil, &vertexShader))
-
+		defer vk.DestroyShaderModule(vkDevice, vertexShader, nil)
 
 		shaderModuleInfo.pCode = auto_cast raw_data(Available_Shader_Binaries[.TriangleFrag])
 		shaderModuleInfo.codeSize = len(Available_Shader_Binaries[.TriangleFrag])
 		ensure(shaderModuleInfo.pCode != nil)
 		ensure(shaderModuleInfo.codeSize > 0)
 		vk_ensure(vk.CreateShaderModule(vkDevice, &shaderModuleInfo, nil, &fragmentShader))
+		defer vk.DestroyShaderModule(vkDevice, fragmentShader, nil)
 
 		shaderStages := [?]vk.PipelineShaderStageCreateInfo {
 			{

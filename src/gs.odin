@@ -1,5 +1,5 @@
 package main
-import vma "../shared/vma"
+// import vma "../shared/vma"
 import "base:runtime"
 import "core:fmt"
 import sdl "vendor:sdl3"
@@ -10,14 +10,14 @@ screenWidth: i32 = 1280
 screenHeight: i32 = 720
 dt: f64
 
-vkVmaProcs: vma.Vulkan_Functions
+// vkVmaProcs: vma.Vulkan_Functions
 vkInstance: vk.Instance
 vkDebugMessenger: vk.DebugUtilsMessengerEXT
 vkGpu: vk.PhysicalDevice
 vkDevice: vk.Device
 vkQueue: vk.Queue
 vkCommandPool: vk.CommandPool
-vkAppAlocator: vma.Allocator
+// vkAppAlocator: vma.Allocator
 vkSemaphores: struct {
 	submit:  vk.Semaphore,
 	acquire: vk.Semaphore,

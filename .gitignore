@@ -3,6 +3,8 @@
 *.rdi
 *.dll
 *.spv
+assets/shaders/
+.env
 shared/vma/build/
 build/
 
