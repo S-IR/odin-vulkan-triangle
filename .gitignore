@@ -2,6 +2,7 @@
 *.pdb
 *.rdi
 *.dll
+*.spv
 shared/vma/build/
 build/
 

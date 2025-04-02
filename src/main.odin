@@ -102,6 +102,7 @@ main :: proc() {
 
 
 	vk_init()
+	defer vk_destroy()
 	vk_triangle()
 	free_all(context.temp_allocator)
 
@@ -207,6 +208,7 @@ vk_init :: proc() {
 	ensure(vkInstance != nil)
 	vk.load_proc_addresses_instance(vkInstance)
 
+
 	// Corrected surface declaration and usage
 	ensure(
 		sdl.Vulkan_CreateSurface(window, vkInstance, nil, &vkSurface),
@@ -292,6 +294,22 @@ vk_init :: proc() {
 
 	ensure(vkQueue != {})
 	ensure(vkDevice != {})
+	{
+		vkVmaProcs = vma.create_vulkan_functions()
+		vRes = vma.create_allocator(
+			vma.Allocator_Create_Info {
+				flags = {.Buffer_Device_Address},
+				instance = vkInstance,
+				vulkan_api_version = vk.MAKE_VERSION(1, 3, 2),
+				physical_device = vkGpu,
+				device = vkDevice,
+				vulkan_functions = &vkVmaProcs,
+			},
+			&vkAppAlocator,
+		)
+		vk_ensure(vRes)
+	}
+	ensure(vkAppAlocator != {})
 
 	{
 		MAX_SURFACE_CAPS :: 64
@@ -366,6 +384,8 @@ vk_init :: proc() {
 			presentMode      = .FIFO,
 			clipped          = true,
 		}
+
+		allocCallbacks := vk.AllocationCallbacks{}
 		vk_ensure(vk.CreateSwapchainKHR(vkDevice, &swapchainCreateInfo, nil, &vkSwapchain))
 	}
 
@@ -488,6 +508,25 @@ vk_init :: proc() {
 	}
 	free_all(context.temp_allocator)
 }
+vk_destroy :: proc() {
+	vk.DestroySemaphore(vkDevice, vkSemaphores.submit, nil)
+	vk.DestroySemaphore(vkDevice, vkSemaphores.acquire, nil)
+	for i in 0 ..< TOTAL_SWAPCHAIN_IMAGES {
+		vk.DestroyImageView(vkDevice, vkScImageViews[i], nil)
+		vk.DestroyFramebuffer(vkDevice, vkFrameBuffers[i], nil)
+	}
+	vk.DestroySwapchainKHR(vkDevice, vkSwapchain, nil)
+	vk.DestroyRenderPass(vkDevice, vkRenderPass, nil)
+	vma.destroy_allocator(vkAppAlocator)
+	vk.DestroyCommandPool(vkDevice, vkCommandPool, nil)
+	vk.DestroySurfaceKHR(vkInstance, vkSurface, nil)
+	vk.DestroyDevice(vkDevice, nil)
+	when ODIN_DEBUG {
+		vk.DestroyDebugUtilsMessengerEXT(vkInstance, vkDebugMessenger, nil)
+	}
+	vk.DestroyInstance(vkInstance, nil)
+
+}
 Triangle_r: struct {
 	pipeline:       vk.Pipeline,
 	pipelineLayout: vk.PipelineLayout,
@@ -592,6 +631,10 @@ vk_triangle :: proc() {
 	}
 	ensure(&Triangle_r.pipeline != {})
 }
+vk_triangle_destroy :: proc() {
+	vk.DestroyPipelineLayout(vkDevice, Triangle_r.pipelineLayout, nil)
+	vk.DestroyPipeline(vkDevice, Triangle_r.pipeline, nil)
+}
 vk_render :: proc() {
 	vRes: vk.Result
 	vkImgIdx: u32 = max(u32)
@@ -653,75 +696,6 @@ vk_render :: proc() {
 		assert(Triangle_r.pipeline != {})
 		vk.CmdBindPipeline(cmd, .GRAPHICS, Triangle_r.pipeline)
 		vk.CmdDraw(cmd, 3, 1, 0, 0)
-		// // First barrier: transition from UNDEFINED to TRANSFER_DST_OPTIMAL.
-		// barrier1 := vk.ImageMemoryBarrier {
-		// 	sType = .IMAGE_MEMORY_BARRIER,
-		// 	oldLayout = .UNDEFINED,
-		// 	newLayout = .TRANSFER_DST_OPTIMAL,
-		// 	srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
-		// 	dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
-		// 	image = vkScImages[vkImgIdx],
-		// 	subresourceRange = vk.ImageSubresourceRange {
-		// 		aspectMask = {.COLOR},
-		// 		baseMipLevel = 0,
-		// 		levelCount = 1,
-		// 		baseArrayLayer = 0,
-		// 		layerCount = 1,
-		// 	},
-		// 	srcAccessMask = {},
-		// 	dstAccessMask = {.TRANSFER_WRITE},
-		// }
-		// vk.CmdPipelineBarrier(cmd, {.TOP_OF_PIPE}, {.TRANSFER}, {}, 0, nil, 0, nil, 1, &barrier1)
-
-
-		// range := vk.ImageSubresourceRange {
-		// 	aspectMask     = {.COLOR},
-		// 	baseMipLevel   = 0,
-		// 	levelCount     = 1,
-		// 	baseArrayLayer = 0,
-		// 	layerCount     = 1,
-		// }
-
-
-		// vk.CmdClearColorImage(
-		// 	cmd,
-		// 	vkScImages[vkImgIdx],
-		// 	.TRANSFER_DST_OPTIMAL,
-		// 	&clearColor.color,
-		// 	1,
-		// 	&range,
-		// )
-
-		// // Second barrier: transition from TRANSFER_DST_OPTIMAL to PRESENT_SRC_KHR.
-		// barrier2 := vk.ImageMemoryBarrier {
-		// 	sType = .IMAGE_MEMORY_BARRIER,
-		// 	oldLayout = .TRANSFER_DST_OPTIMAL,
-		// 	newLayout = .PRESENT_SRC_KHR,
-		// 	srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
-		// 	dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
-		// 	image = vkScImages[vkImgIdx],
-		// 	subresourceRange = vk.ImageSubresourceRange {
-		// 		aspectMask = {.COLOR},
-		// 		baseMipLevel = 0,
-		// 		levelCount = 1,
-		// 		baseArrayLayer = 0,
-		// 		layerCount = 1,
-		// 	},
-		// 	srcAccessMask = {.TRANSFER_WRITE},
-		// 	dstAccessMask = {},
-		// }
-		// vk.CmdPipelineBarrier(
-		// 	cmd,
-		// 	{.TRANSFER},
-		// 	{.BOTTOM_OF_PIPE},
-		// 	{},
-		// 	0,
-		// 	nil,
-		// 	0,
-		// 	nil,
-		// 	1,
-		// 	&barrier2,
-		// )
 	}
 	vk.CmdEndRenderPass(cmd)
 
